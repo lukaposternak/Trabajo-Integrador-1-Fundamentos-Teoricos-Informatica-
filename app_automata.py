@@ -57,13 +57,24 @@ class NFAToDFAConverter:
         dfa_transitions = {}
         dfa_final_states = set()
         
-        logs.append("1. Cálculo inicial de Clausuras-Lambda (λ):")
-        lambda_headers = ["Estado AFND", "Clausura-λ"]
-        lambda_rows = []
-        for s in nfa.states:
-            c = NFAToDFAConverter.get_lambda_closure([s], nfa.transitions)
-            lambda_rows.append([s, "{" + ", ".join(sorted(c)) + "}"])
-        logs.append(format_table(lambda_headers, lambda_rows))
+        logs.append("1. Tabla de Transiciones del Autómata Original (AFND):")
+        
+        all_symbols = sorted(list(nfa.alphabet))
+        if "lambda" in all_symbols:
+            all_symbols.remove("lambda")
+            all_symbols.append("lambda")
+            
+        orig_headers = ["Estado"] + [f"δ({sym})" for sym in all_symbols] + ["Final?"]
+        orig_rows = []
+        for s in sorted(nfa.states):
+            row = [s]
+            for sym in all_symbols:
+                dests = nfa.transitions.get(s, {}).get(sym, [])
+                row.append("{" + ", ".join(sorted(dests)) + "}" if dests else "-")
+            row.append("Sí" if s in nfa.final_states else "No")
+            orig_rows.append(row)
+            
+        logs.append(format_table(orig_headers, orig_rows))
         
         initial_closure = NFAToDFAConverter.get_lambda_closure([nfa.initial_state], nfa.transitions)
         unprocessed_states = deque([initial_closure])
@@ -118,7 +129,7 @@ class NFAToDFAConverter:
                         unprocessed_states.append(next_closure)
                         new_discovered.append(next_name)
                 else:
-                    row.append("∅")
+                    row.append("-")
             
             row.append("Sí" if is_final else "No")
             cumulative_rows.append(row)
@@ -126,7 +137,7 @@ class NFAToDFAConverter:
             logs.append(f"\n--- Iteración {iteration} ---")
             logs.append(format_table(trans_headers, [row]))
             if new_discovered:
-                logs.append(f"-> Nuevos estados compuestos descubiertos y agregados a la cola: {', '.join(new_discovered)}")
+                logs.append(f"-> Nuevos estados descubiertos agregados a la cola: {', '.join(new_discovered)}")
             else:
                 logs.append("-> No se descubrieron estados nuevos.")
             
@@ -134,7 +145,6 @@ class NFAToDFAConverter:
 
         logs.append("\n3. Tabla de Transiciones del AFD Final Alcanzable:")
         logs.append(format_table(trans_headers, cumulative_rows))
-        logs.append("Nota: El algoritmo descarta automáticamente los estados inalcanzables al no generarlos desde el estado inicial.")
 
         dfa = Automaton(
             alphabet=valid_alphabet,
