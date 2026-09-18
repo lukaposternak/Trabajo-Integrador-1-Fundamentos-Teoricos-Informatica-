@@ -38,21 +38,8 @@ class Automaton:
 
 class NFAToDFAConverter:
     @staticmethod
-    def get_lambda_closure(states, transitions):
-        closure = set(states)
-        stack = list(states)
-        while stack:
-            state = stack.pop()
-            lambda_transitions = transitions.get(state, {}).get("lambda", [])
-            for next_state in lambda_transitions:
-                if next_state not in closure:
-                    closure.add(next_state)
-                    stack.append(next_state)
-        return frozenset(closure)
-
-    @staticmethod
     def convert(nfa: Automaton):
-        logs = ["=== PASO 1: CONVERSIÓN AFND A AFD (PASO A PASO) ===\n"]
+        logs = ["=== PASO 1: CONVERSIÓN AFND A AFD (CONSTRUCCIÓN DE SUBCONJUNTOS) ===\n"]
         dfa_states = set()
         dfa_transitions = {}
         dfa_final_states = set()
@@ -60,9 +47,6 @@ class NFAToDFAConverter:
         logs.append("1. Tabla de Transiciones del Autómata Original (AFND):")
         
         all_symbols = sorted(list(nfa.alphabet))
-        if "lambda" in all_symbols:
-            all_symbols.remove("lambda")
-            all_symbols.append("lambda")
             
         orig_headers = ["Estado"] + [f"δ({sym})" for sym in all_symbols] + ["Final?"]
         orig_rows = []
@@ -76,8 +60,9 @@ class NFAToDFAConverter:
             
         logs.append(format_table(orig_headers, orig_rows))
         
-        initial_closure = NFAToDFAConverter.get_lambda_closure([nfa.initial_state], nfa.transitions)
-        unprocessed_states = deque([initial_closure])
+        # El estado inicial es estrictamente el conjunto con el estado inicial original (sin clausura)
+        initial_macro = frozenset([nfa.initial_state])
+        unprocessed_states = deque([initial_macro])
         processed_states = set()
         
         state_name_map = {}
@@ -90,10 +75,9 @@ class NFAToDFAConverter:
                 state_counter += 1
             return state_name_map[state_frozenset]
 
-        dfa_initial_state = get_state_name(initial_closure)
-        valid_alphabet = sorted([s for s in nfa.alphabet if s != "lambda"])
+        dfa_initial_state = get_state_name(initial_macro)
 
-        trans_headers = ["Estado AFD", "Subconjunto AFND"] + [f"δ({sym})" for sym in valid_alphabet] + ["Final?"]
+        trans_headers = ["Estado AFD", "Subconjunto AFND"] + [f"δ({sym})" for sym in all_symbols] + ["Final?"]
         cumulative_rows = []
 
         logs.append("2. Construcción de Subconjuntos iterativa:")
@@ -113,20 +97,21 @@ class NFAToDFAConverter:
             row = [current_name, "{" + ", ".join(sorted(current_macro)) + "}"]
             new_discovered = []
             
-            for symbol in valid_alphabet:
+            for symbol in all_symbols:
                 next_macro = set()
+                # Unión directa de destinos sin clausuras lambda
                 for state in current_macro:
                     next_macro.update(nfa.transitions.get(state, {}).get(symbol, []))
                 
                 if next_macro:
-                    next_closure = NFAToDFAConverter.get_lambda_closure(next_macro, nfa.transitions)
-                    next_name = get_state_name(next_closure)
+                    next_macro_frozenset = frozenset(next_macro)
+                    next_name = get_state_name(next_macro_frozenset)
                     dfa_transitions[current_name][symbol] = [next_name]
                     
-                    row.append(f"{next_name} ({"{" + ', '.join(sorted(next_closure)) + "}"})")
+                    row.append(f"{next_name} ({"{" + ', '.join(sorted(next_macro)) + "}"})")
                     
-                    if next_closure not in processed_states and next_closure not in unprocessed_states:
-                        unprocessed_states.append(next_closure)
+                    if next_macro_frozenset not in processed_states and next_macro_frozenset not in unprocessed_states:
+                        unprocessed_states.append(next_macro_frozenset)
                         new_discovered.append(next_name)
                 else:
                     row.append("-")
@@ -147,7 +132,7 @@ class NFAToDFAConverter:
         logs.append(format_table(trans_headers, cumulative_rows))
 
         dfa = Automaton(
-            alphabet=valid_alphabet,
+            alphabet=all_symbols,
             states=list(state_name_map.values()),
             initial_state=dfa_initial_state,
             final_states=list(dfa_final_states),
