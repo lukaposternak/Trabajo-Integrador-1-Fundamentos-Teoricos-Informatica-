@@ -45,7 +45,6 @@ class NFAToDFAConverter:
         dfa_final_states = set()
         
         logs.append("1. Tabla de Transiciones del Autómata Original (AFND):")
-        
         all_symbols = sorted(list(nfa.alphabet))
             
         orig_headers = ["Estado"] + [f"δ({sym})" for sym in all_symbols] + ["Final?"]
@@ -60,7 +59,6 @@ class NFAToDFAConverter:
             
         logs.append(format_table(orig_headers, orig_rows))
         
-        # El estado inicial es estrictamente el conjunto con el estado inicial original (sin clausura)
         initial_macro = frozenset([nfa.initial_state])
         unprocessed_states = deque([initial_macro])
         processed_states = set()
@@ -76,7 +74,6 @@ class NFAToDFAConverter:
             return state_name_map[state_frozenset]
 
         dfa_initial_state = get_state_name(initial_macro)
-
         trans_headers = ["Estado AFD", "Subconjunto AFND"] + [f"δ({sym})" for sym in all_symbols] + ["Final?"]
         cumulative_rows = []
 
@@ -99,7 +96,6 @@ class NFAToDFAConverter:
             
             for symbol in all_symbols:
                 next_macro = set()
-                # Unión directa de destinos sin clausuras lambda
                 for state in current_macro:
                     next_macro.update(nfa.transitions.get(state, {}).get(symbol, []))
                 
@@ -142,6 +138,11 @@ class NFAToDFAConverter:
 
 class MooreMinimizer:
     @staticmethod
+    def get_class_prefix(iteration):
+        """Devuelve una letra del abecedario según el número de iteración (0=A, 1=B, etc)."""
+        return chr(65 + iteration) if iteration < 26 else f"P{iteration}_"
+
+    @staticmethod
     def minimize(dfa: Automaton):
         logs = ["\n=== PASO 2: MINIMIZACIÓN DE AFD (MÉTODO DE MOORE) ===\n"]
         alphabet = sorted(list(dfa.alphabet))
@@ -163,8 +164,10 @@ class MooreMinimizer:
             logs.append("Se agregó un estado sumidero (Trap) para completar el AFD.\n")
 
         classes = {}
+        # Iteración 0 arranca con la letra A
+        initial_prefix = MooreMinimizer.get_class_prefix(0)
         for s in states:
-            classes[s] = "G1" if s in dfa.final_states else "G0"
+            classes[s] = f"{initial_prefix}1" if s in dfa.final_states else f"{initial_prefix}0"
 
         iteration = 0
         while True:
@@ -175,6 +178,9 @@ class MooreMinimizer:
             new_classes = {}
             signatures = {}
             next_class_id = 0
+            
+            # La nueva clase usará la letra de la iteración + 1 (ej. B, C, D...)
+            next_prefix = MooreMinimizer.get_class_prefix(iteration + 1)
             
             for s in sorted(states):
                 current_class = classes[s]
@@ -189,7 +195,7 @@ class MooreMinimizer:
                 signature = (current_class, tuple(dest_classes))
                 
                 if signature not in signatures:
-                    signatures[signature] = f"C{next_class_id}"
+                    signatures[signature] = f"{next_prefix}{next_class_id}"
                     next_class_id += 1
                 
                 new_class = signatures[signature]
